@@ -1,0 +1,42 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+
+      - name: Unit tests
+        run: python -m pytest tests/unit -q
+
+      - name: End-to-end pipeline against the mock server
+        run: |
+          python -m bench run --config configs/mock.yaml --out results/mock-ci
+          python -m bench verify --results results/mock-ci
+          python -m bench report --results results/mock-ci
+
+      - name: Fault injection -- correctness suite must catch a broken prefix cache
+        run: |
+          python -m bench run --config configs/mock_buggy_cache.yaml --out results/mock-buggy --only correctness
+          # the two cache-consistency checks must each fail on the corrupted cache
+          for t in test_warm_hit_matches_cold_miss test_shared_prefix_cache_on_vs_off; do
+            if python -m pytest tests/correctness --results results/mock-buggy -q -k "$t"; then
+              echo "::error::$t did NOT detect the injected cache bug"; exit 1
+            fi
+          done
+          echo "injected cache bug detected as expected"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mock-results
+          path: results/

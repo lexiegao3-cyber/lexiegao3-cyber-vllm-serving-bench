@@ -1,0 +1,45 @@
+# Reference experiment: Qwen2.5-1.5B-Instruct on one 24 GB GPU (NVIDIA L4 / A10G).
+# Runtime: ~30-45 min for both modes. Bigger GPU -> raise concurrency / model size.
+
+server:
+  model: Qwen/Qwen2.5-1.5B-Instruct
+  port: 8000
+  max_model_len: 8192
+  startup_timeout_s: 900
+  # {prefix_caching_flag} -> --enable-prefix-caching | --no-enable-prefix-caching
+  cmd: >-
+    vllm serve {model} --port {port} --host 127.0.0.1
+    --max-model-len {max_model_len} --gpu-memory-utilization 0.90
+    --seed 0 --dtype bfloat16 {prefix_caching_flag}
+
+modes: [cache_on, cache_off]
+
+token_pool_words: 40000          # filler corpus tokenized once; prompts are windows of it
+
+throughput:                      # Q2a: latency/throughput vs concurrency, fixed lengths
+  modes: [cache_on, cache_off]   # random prompts share nothing -> both should match (no-overhead check)
+  input_len: 1024
+  output_len: 128                # exact: requests use ignore_eos
+  concurrency: [1, 2, 4, 8, 16, 32, 64]
+  min_requests: 32
+  requests_per_concurrency: 4    # n = max(min_requests, 4 * concurrency)
+  warmup: 4
+
+prefix:                          # Q2b: prefix caching A/B on a shared-prefix workload
+  shared_prefix_len: 2048        # e.g. a long system prompt / RAG document
+  suffix_len: 64                 # unique per-request question
+  output_len: 64
+  num_groups: 4                  # 4 distinct prefixes interleaved
+  num_requests: 128
+  concurrency: [1, 8, 32]
+
+correctness:                     # Q3: repeatable correctness evidence
+  max_tokens: 64
+  repeats: 3
+  shared_doc_words: 1500
+  context_lengths: [1024, 4096, 0.9]   # values <= 1 are fractions of max_model_len
+  depths: [0.1, 0.5, 0.9]
+  thresholds:
+    near_tie_nats: 0.5           # allowed divergence only where top1-top2 logprob gap < this
+    min_exact_match_rate: 0.75   # fixed prompts, cache on vs off
+    needle_min_accuracy: 0.8

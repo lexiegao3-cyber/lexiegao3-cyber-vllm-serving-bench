@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+# mock runs are synthetic -- never commit them as results
+results/mock-*/
+results/**/server_*.log

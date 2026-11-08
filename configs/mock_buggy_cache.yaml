@@ -1,0 +1,42 @@
+# Fault-injection config: the mock server corrupts outputs on prefix-cache hits.
+# The correctness suite is EXPECTED TO FAIL on this run (CI asserts that it does).
+
+server:
+  model: mock-model
+  port: 8012
+  max_model_len: 4096
+  startup_timeout_s: 60
+  cmd: >-
+    python tools/mock_server.py --port {port} --model {model}
+    --max-model-len {max_model_len} {prefix_caching_flag} --inject-cache-bug
+
+modes: [cache_on, cache_off]
+token_pool_words: 20000
+
+throughput:
+  modes: [cache_on, cache_off]
+  input_len: 256
+  output_len: 32
+  concurrency: [1, 4, 16]
+  min_requests: 16
+  requests_per_concurrency: 2
+  warmup: 2
+
+prefix:
+  shared_prefix_len: 1024
+  suffix_len: 32
+  output_len: 16
+  num_groups: 4
+  num_requests: 48
+  concurrency: [1, 8]
+
+correctness:
+  max_tokens: 24
+  repeats: 2
+  shared_doc_words: 600
+  context_lengths: [512, 0.9]
+  depths: [0.1, 0.9]
+  thresholds:
+    near_tie_nats: 0.5
+    min_exact_match_rate: 0.75
+    needle_min_accuracy: 0.8
